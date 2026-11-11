@@ -1,0 +1,33 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: auth-service
+
+# RSA Asymmetric Cryptography Configuration
+# Binds to com.security.rsa.common.config.RsaKeyProperties
+rsa:
+  private-key-location: classpath:keys/private_key.pem
+  public-key-location: classpath:keys/public_key.pem
+  key-id: rsa-auth-key-1
+  issuer: http://localhost:8081
+  token-ttl-seconds: 3600
+  cipher-transformation: RSA/ECB/OAEPWithSHA-256AndMGF1Padding
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.security.rsa: DEBUG
+    org.springframework.security: INFO

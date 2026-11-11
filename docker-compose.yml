@@ -1,0 +1,34 @@
+services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SERVER_PORT=8081
+      - RSA_ISSUER=http://auth-service:8081
+    networks:
+      - crypto-net
+
+  resource-service:
+    build:
+      context: .
+      dockerfile: resource-service/Dockerfile
+    container_name: resource-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SERVER_PORT=8082
+      - RSA_ISSUER=http://auth-service:8081
+      - RSA_AUTH_SERVICE_URL=http://auth-service:8081
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://auth-service:8081/.well-known/jwks.json
+    depends_on:
+      - auth-service
+    networks:
+      - crypto-net
+
+networks:
+  crypto-net:
+    driver: bridge

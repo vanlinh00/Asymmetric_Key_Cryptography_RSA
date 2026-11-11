@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.0</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>com.security.rsa</groupId>
+    <artifactId>rsa-cryptography-microservices</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>RSA Cryptography Microservices Parent</name>
+    <description>Multi-module Maven demonstration project for Asymmetric Key Cryptography (RSA), Spring Boot 3.4.0, Spring Security 6.4, and Nimbus JOSE</description>
+
+    <modules>
+        <module>crypto-common</module>
+        <module>auth-service</module>
+        <module>resource-service</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spring-boot.version>3.4.0</spring-boot.version>
+        <nimbus-jose-jwt.version>9.47</nimbus-jose-jwt.version>
+        <bouncycastle.version>1.78.1</bouncycastle.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Internal common crypto module -->
+            <dependency>
+                <groupId>com.security.rsa</groupId>
+                <artifactId>crypto-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Nimbus JOSE + JWT -->
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>nimbus-jose-jwt</artifactId>
+                <version>${nimbus-jose-jwt.version}</version>
+            </dependency>
+
+            <!-- Optional Bouncy Castle for advanced PEM/ASN.1 parsing -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

@@ -1,0 +1,6 @@
+{
+  "name": "RSA Cryptography & Spring Boot 3.4 Microservices",
+  "description": "Production-grade multi-module Maven microservices demonstration in Java 17 and Spring Boot 3.4.0 featuring asymmetric RSA cryptography, RS256 JWT, JWKS, and JCA payload encryption.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

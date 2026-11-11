@@ -1,0 +1,43 @@
+server:
+  port: 8082
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: resource-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Dynamic JWKS endpoint from auth-service (Optional dynamic mode)
+          jwk-set-uri: http://localhost:8081/.well-known/jwks.json
+          issuer-uri: http://localhost:8081
+
+# RSA Asymmetric Cryptography Configuration (Downstream Resource Server)
+# Binds to com.security.rsa.common.config.RsaKeyProperties
+# NOTE: resource-service intentionally has NO access to private_key.pem!
+rsa:
+  public-key-location: classpath:keys/public_key.pem
+  key-id: rsa-auth-key-1
+  issuer: http://localhost:8081
+  cipher-transformation: RSA/ECB/OAEPWithSHA-256AndMGF1Padding
+  # Toggle validation strategy: 'LOCAL_PUBLIC_KEY' or 'DYNAMIC_JWKS'
+  validation-mode: LOCAL_PUBLIC_KEY
+  auth-service-url: http://localhost:8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.security.rsa: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: DEBUG
