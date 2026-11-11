@@ -343,9 +343,26 @@ export default function App() {
                   <blockquote className="text-base md:text-lg font-semibold text-white tracking-tight leading-relaxed italic border-l-4 border-indigo-500 pl-4 py-1">
                     “Asymmetric keys (like RS256): It uses a pair of keys. The Auth server uses a Private Key to create the token, while other servers use a Public Key to verify it. This is safer for microservices.”
                   </blockquote>
-                  <p className="text-xs text-slate-300 leading-relaxed max-w-4xl pt-1">
-                    In a distributed microservice architecture, <strong>asymmetric cryptography decouples token minting authority from token verification ability</strong>. Downstream services need only verify identity—they must never possess the power to forge credentials.
-                  </p>
+                  
+                  {/* Two Intuitive Mental Models */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
+                    <div className="p-3 rounded-xl bg-slate-900/90 border border-indigo-500/20 text-xs space-y-1">
+                      <div className="font-bold text-indigo-300 flex items-center gap-1.5">
+                        <span>📬 Analogy 1: The Public Mailbox</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Anyone can drop a message into the open slot (<strong>Public Key</strong>), but only the postman with the physical key can unlock and read it (<strong>Private Key</strong>).
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/20 text-xs space-y-1">
+                      <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                        <span>👑 Analogy 2: The Royal Signet Ring</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Only the King has the ring to stamp the seal (<strong>Private Key signs JWT</strong>). Anyone in the kingdom can inspect the crest to verify it is authentic (<strong>Public Key verifies JWT</strong>).
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

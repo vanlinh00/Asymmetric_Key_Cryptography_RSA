@@ -119,17 +119,16 @@ networks:
   crypto-net:
     driver: bridge`,
 
-  '/README.md': `# Asymmetric Key Cryptography (RSA) in Java 17 & Spring Boot 3.4 Microservices
+  '/README.md': `# Asymmetric Cryptography (RSA) in Spring Boot Microservices
+> A developer-friendly guide to understanding RSA, RS256 JWTs, JWKS, and Payload Encryption in Java 17 and Spring Boot 3.4.
 
-A production-grade multi-module Maven microservices reference architecture implementing **Asymmetric Key Cryptography (RSA)**, **RS256 JWT Token Issuance**, **RFC 7517 JWKS Discovery**, and **Java Cryptography Architecture (JCA)** payload encryption with Spring Boot 3.4.0 and Spring Security 6.4.
+## 💡 The 60-Second Mental Model
+- **Public Key (Slot in Mailbox / Royal Crest)**: Anyone can put mail in, or verify an official royal seal.
+- **Private Key (Physical Mailbox Key / Signet Ring)**: Only the owner can open the box or stamp a valid royal seal!
 
-> *"Asymmetric keys (like RS256): It uses a pair of keys. The Auth server uses a Private Key to create the token, while other servers use a Public Key to verify it. This is safer for microservices."*
-
-## Why RS256 is Safer for Microservices than HS256:
-- **Zero Shared Secrets**: Only auth-service holds the Private Key. Downstream servers only hold the Public Key.
-- **Blast Radius Containment**: If a downstream service is compromised, the attacker only gets a Public Key, which CANNOT forge tokens.
-- **Stateless Offline Verification**: Downstream services verify tokens locally via mathematics without contacting auth-service.
-- **Zero-Downtime Key Rotation**: Dynamic RFC 7517 JWKS allows rotating keys via kid without redeploying microservices.
+## Why RS256 is Safer than HS256:
+- **HS256 (Symmetric)**: 1 shared password. If any downstream service is breached, the attacker steals the secret and can forge fake admin tokens for all services.
+- **RS256 (Asymmetric)**: 2 keys. Only auth-service holds the Private Key. Downstream services hold the Public Key. If a downstream service is breached, attacker gets only the Public Key and CANNOT forge tokens!
 
 ## System Components:
 1. **auth-service (Port 8081)**: Token Issuer & Key Owner (holds private_key.pem securely)

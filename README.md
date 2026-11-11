@@ -1,266 +1,331 @@
-# Asymmetric Key Cryptography (RSA) in Java 17 & Spring Boot 3.4 Microservices
-
-A production-grade multi-module Maven microservices reference architecture implementing **Asymmetric Key Cryptography (RSA)**, **RS256 JWT Token Issuance**, **RFC 7517 JWKS Discovery**, and **Java Cryptography Architecture (JCA)** payload encryption with Spring Boot 3.4.0 and Spring Security 6.4.
-
----
-
-## 🏛️ System Architecture
-
-```
-                          ┌────────────────────────────────────────────────────────┐
-                          │                AUTH-SERVICE (Port 8081)                │
-                          │   Token Issuer & Cryptographic Key Owner               │
-                          │   Holds: private_key.pem (SECRET) & public_key.pem     │
-                          └──────┬──────────────────────────────────▲──────────────┘
-                                 │                                  │
-                   1. POST /login│                                  │3. POST /crypto/decrypt
-                      Issues     │                                  │   Decrypts payload
-                      RS256 JWT  │                                  │   using Private Key
-                                 ▼                                  │
-                          ┌─────────────┐                           │
-                          │   CLIENT    │                           │
-                          └──────┬──────┘                           │
-                                 │                                  │
-                   2. GET /secure-info                              │
-                      Bearer <RS256_JWT>                            │
-                                 ▼                                  │
-                          ┌─────────────────────────────────────────┴──────────────┐
-                          │               RESOURCE-SERVICE (Port 8082)             │
-                          │   Downstream OAuth2 Resource Server                    │
-                          │   Holds: public_key.pem ONLY (ZERO Private Key)        │
-                          │   Validates JWT statelessly using local RSA Public Key │
-                          │   Encrypts secrets with Public Key before forwarding   │
-                          └────────────────────────────────────────────────────────┘
-```
+# Asymmetric Cryptography (RSA) in Spring Boot Microservices
+> A developer-friendly, production-grade guide to understanding **RSA**, **RS256 JWTs**, **JWKS**, and **Payload Encryption** using Java 17 and Spring Boot 3.4.
 
 ---
 
-## 🔑 Asymmetric Key Cryptography (RSA) Foundations
+## 💡 The 60-Second Mental Model
 
-### 1. Mathematical Underpinnings
-RSA relies on the practical difficulty of the prime factorization problem:
-- Choose two large distinct primes $p$ and $q$.
-- Compute the modulus $n = p \times q$. The bit-length of $n$ defines the key strength (e.g. 2048 bits).
-- Calculate Euler's totient: $\phi(n) = (p - 1)(q - 1)$.
-- Choose public exponent $e$ such that $1 < e < \phi(n)$ and $\gcd(e, \phi(n)) = 1$ (Standard: $65537 = 2^{16} + 1$).
-- Compute private exponent $d \equiv e^{-1} \pmod{\phi(n)}$.
-- **Public Key**: $(e, n)$
-- **Private Key**: $(d, n)$ (along with CRT components $p, q, dp, dq, q_{inv}$ for fast computation).
+Imagine a **public mailbox with a slot**:
+- **Anyone can drop a letter in** because the slot is open to the public (**Public Key**).
+- **Only the postal worker with the physical key can unlock and read the letters** (**Private Key**).
 
-### 2. Dual Capabilities of RSA:
-1. **Digital Signatures (Authentication & Non-repudiation)**:
-   - Issuer hashes the message ($H = \text{SHA-256}(M)$) and encrypts $H$ with the **Private Key**: $S = H^d \pmod n$.
-   - Any verifier with the **Public Key** computes $H' = S^e \pmod n$ and verifies $H' == H$.
-   - Demonstrated in this project via **RS256 JWTs**.
-2. **Asymmetric Encryption (Confidentiality)**:
-   - Sender encrypts data using the recipient's **Public Key**: $C = M^e \pmod n$.
-   - Only the recipient with the matching **Private Key** can decrypt: $M = C^d \pmod n$.
-   - Demonstrated in this project via **JCA RSA-OAEP SHA-256**.
+Now imagine a **wax seal with an official signet ring**:
+- **Only the King has the signet ring to stamp the seal** (**Private Key signs the token**).
+- **Anyone in the kingdom can look at the royal crest and verify it's authentic** (**Public Key verifies the token**).
 
-### 3. Why RSA-OAEP instead of PKCS#1 v1.5?
-- **Bleichenbacher's Attack (Million Message Attack)**: PKCS#1 v1.5 padding errors act as an oracle allowing attackers to decrypt ciphertexts without the private key.
-- **OAEP (Optimal Asymmetric Encryption Padding)**: Combines asymmetric encryption with an all-or-nothing transform using Feistel networks and cryptographic hash functions (SHA-256 with MGF1). It is provably IND-CCA2 secure.
+### Symmetric vs Asymmetric in Plain English
 
-### 4. Why Asymmetric (RS256) is Safer for Microservices than Symmetric (HS256)
-
-> **Core Architectural Axiom**:
-> *"Asymmetric keys (like RS256): It uses a pair of keys. The Auth server uses a Private Key to create the token, while other servers use a Public Key to verify it. This is safer for microservices."*
-
-In modern distributed microservices, **asymmetric cryptography decouples the authority to mint credentials from the capability to verify them**.
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                             SYMMETRIC (HS256) - HIGH RISK                              │
-│                                                                                        │
-│   AUTH SERVER               BILLING SERVICE               REPORTING SERVICE            │
-│   ┌─────────────┐           ┌─────────────┐               ┌─────────────┐              │
-│   │Shared Secret│──────────▶│Shared Secret│──────────────▶│Shared Secret│              │
-│   └─────────────┘           └─────────────┘               └──────┬──────┘              │
-│                                                                  │ BREACHED!           │
-│                                                                  ▼                     │
-│                                                     [ Attacker steals Secret ]         │
-│                                                                  │                     │
-│                                            FORGES ADMIN TOKEN FOR ALL SERVICES!        │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                           ASYMMETRIC (RS256) - ZERO TRUST                              │
-│                                                                                        │
-│   AUTH SERVER (8081)        RESOURCE SERVER (8082)        REPORTING SERVICE            │
-│   ┌─────────────┐           ┌─────────────┐               ┌─────────────┐              │
-│   │ PRIVATE KEY │           │ Public Key  │               │ Public Key  │              │
-│   │  (Isolated) │           │ (Verify Only│               │ (Verify Only│              │
-│   └─────────────┘           └─────────────┘               └──────┬──────┘              │
-│                                                                  │ BREACHED!           │
-│                                                                  ▼                     │
-│                                                     [ Attacker gets Public Key ]       │
-│                                                                  │                     │
-│                                             CANNOT FORGE TOKENS (Needs Priv Key)       │
-│                                             SYSTEM INTEGRITY REMAINS INTACT!           │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Detailed Security & Architectural Breakdown:
-
-#### A. Decoupled Authority & Blast Radius Containment
-- **With Symmetric HS256**: The cryptographic primitive (HMAC-SHA256) uses the exact same secret for signing ($H = \text{HMAC}(K, M)$) and verifying ($H' == H$). Consequently, **every downstream microservice that needs to verify tokens must possess the signing secret**. If a low-security service (e.g. an internal reporting tool or third-party logger) is breached, the attacker dumps the secret and instantly gains the ability to mint valid counterfeit `ROLE_ADMIN` tokens for **any service in the ecosystem**.
-- **With Asymmetric RS256**: The private key ($d$) remains strictly isolated in `auth-service`. Downstream services hold only the public key ($e, n$). If a downstream microservice is breached, the attacker only acquires public keys. Because generating an RSA signature requires computing $S = H^d \pmod n$, **it is mathematically impossible to forge tokens without $d$**. The breach is strictly contained.
-
-#### B. Eradication of "Secret Sprawl"
-- In an architecture with 30 microservices, HS256 forces you to distribute and synchronize 30 identical copies of a high-value secret across Kubernetes Secrets, CI/CD pipelines, Docker environments, and developer workstations.
-- With RS256, only 1 service (`auth-service`) holds a secret. Public keys are non-sensitive and can be freely published via DNS, RFC 7517 JWKS endpoints, or checked into version control.
-
-#### C. Zero-Downtime Key Rotation via RFC 7517 JWKS
-- **HS256 Secret Rotation**: Requires synchronized cluster-wide deployment. If one service updates before another, valid tokens are rejected.
-- **RS256 Key Rotation**: `auth-service` generates a new key pair (`kid: "rsa-key-2"`), publishes it at `GET /.well-known/jwks.json`, and signs new tokens with it. Downstream services dynamically pull the new key based on the JWT's `kid` header while still verifying in-flight tokens signed with `rsa-key-1`. Zero downtime, zero synchronized redeployments.
-
-#### D. Stateless Offline Verification Performance
-- Downstream services verify tokens purely mathematically using their local `RSAPublicKey` bean in $\sim 0.1\text{ ms}$, without making synchronous network calls back to `auth-service`. This eliminates single-points-of-failure (SPOF) and network latency bottlenecks.
-
-| Architectural Dimension | Symmetric (HS256) | Asymmetric (RS256) |
-|---|---|---|
-| **Secret Distribution** | Shared Secret ($1:N$) - Every downstream service holds the secret | Private Key ($1$), Public Key ($N$) |
-| **Downstream Compromise Blast Radius** | **Catastrophic (Total)** - Attacker can forge `ROLE_ADMIN` tokens across all services | **Zero Escalation** - Attacker only gets Public Key; token minting is mathematically impossible |
-| **Key Rotation Complexity** | Synchronous, high-risk, requires simultaneous deployment | Transparent via RFC 7517 JWKS (`kid`) without redeploying microservices |
-| **Third-Party / Client Verification** | Impossible without exposing signing ability | Native & Safe - Anyone can verify without being able to forge |
-| **Spring Security 6.4 Support** | Manual secret configuration | Native `spring-boot-starter-oauth2-resource-server` (`NimbusJwtDecoder.withPublicKey`) |
+| Feature | Symmetric (HS256) | Asymmetric (RS256) ⭐ |
+| :--- | :--- | :--- |
+| **How many keys?** | **1 shared secret password** | **2 keys**: Private Key + Public Key |
+| **Who can create tokens?** | Anyone who has the password | **Only the Auth Service** (holds Private Key) |
+| **Who can verify tokens?** | Anyone who has the password | **Any service** (holds Public Key) |
+| **What if a downstream service gets hacked?** | **Disaster**: Attacker steals the password and can fake tokens for the entire system! | **Safe**: Attacker only gets the Public Key. They cannot forge tokens! |
+| **Key Rotation** | Painful. Must restart all 20+ microservices at the same exact second. | Seamless. Auth server publishes new public keys via a URL (`jwks.json`). |
 
 ---
 
-## 📦 Multi-Module Project Structure
+## 🏛️ The Two Microservices
 
-| Module | Port | Key Roles & Cryptographic Material |
-|---|---|---|
-| `crypto-common` | N/A | Java 17 `KeyFactory` utilities (`PemKeyUtils`), JCA `RsaCryptoService`, `@ConfigurationProperties(prefix = "rsa")` bindings, DTOs |
-| `auth-service` | `8081` | Holds `private_key.pem` & `public_key.pem`. Signs RS256 JWTs (`/api/v1/auth/login`), serves JWKS (`/.well-known/jwks.json`), decrypts downstream payloads (`/api/v1/crypto/decrypt`) |
-| `resource-service` | `8082` | Holds `public_key.pem` ONLY. Spring Security 6.4 Resource Server (`/api/v1/data/secure-info`). Encrypts payloads using `SecureCryptoClient` |
+This project splits responsibilities cleanly between two services:
+
+```
+┌─────────────────────────────────────────┐
+│        auth-service (Port 8081)         │
+│         "The Token Issuer & Key Owner"  │
+│                                         │
+│ • Holds: private_key.pem (KEEP SECRET!) │
+│ • POST /api/v1/auth/login               │
+│   Authenticates user & signs RS256 JWT  │
+│ • GET /.well-known/jwks.json            │
+│   Shares Public Key with the world      │
+│ • POST /api/v1/crypto/decrypt           │
+│   Decrypts secret payloads from clients │
+└───────────────────┬─────────────────────┘
+                    │
+                    │ 1. Client logs in, gets RS256 Bearer JWT
+                    ▼
+┌─────────────────────────────────────────┐
+│               Client / App              │
+└───────────────────┬─────────────────────┘
+                    │
+                    │ 2. Client sends token: "Authorization: Bearer <TOKEN>"
+                    ▼
+┌─────────────────────────────────────────┐
+│      resource-service (Port 8082)       │
+│        "The Downstream Resource Server" │
+│                                         │
+│ • Holds: public_key.pem ONLY            │
+│   (Has ZERO knowledge of Private Key)   │
+│ • GET /api/v1/data/secure-info          │
+│   Validates token locally using math    │
+│   (Does NOT call auth-service!)         │
+│ • SecureCryptoClient                    │
+│   Encrypts data with Public Key and     │
+│   sends it to auth-service to decrypt   │
+└─────────────────────────────────────────┘
+```
 
 ---
 
-## 🛠️ Key Generation (OpenSSL 3+ / PKCS#8)
+## 📂 Project Structure
 
-Java's `KeyFactory.getInstance("RSA")` expects private keys in **PKCS#8** format (`PKCS8EncodedKeySpec`) and public keys in **X.509 SubjectPublicKeyInfo** format (`X509EncodedKeySpec`).
+```
+rsa-cryptography-microservices/
+├── pom.xml                                  <-- Parent POM (Java 17, Spring Boot 3.4.0)
+│
+├── crypto-common/                           <-- Shared Library
+│   └── src/main/java/com/security/rsa/common/
+│       ├── util/PemKeyUtils.java            <-- Reads .pem files into Java RSA Key objects
+│       ├── crypto/RsaCryptoService.java     <-- RSA-OAEP encryption & decryption service
+│       ├── crypto/AsymmetricKeyGenerator.java<-- Generates fresh 2048-bit RSA keys
+│       ├── config/RsaKeyProperties.java     <-- Binds "rsa.*" configs from application.yml
+│       └── model/                           <-- DTOs (LoginRequest, TokenResponse, etc.)
+│
+├── auth-service/ (Port 8081)                <-- Key Owner & Token Issuer
+│   └── src/main/
+│       ├── resources/
+│       │   ├── application.yml              <-- Port 8081, paths to keys
+│       │   └── keys/
+│       │       ├── private_key.pem          <-- SECRET: Used to sign & decrypt
+│       │       └── public_key.pem           <-- PUBLIC: Used to verify
+│       └── java/com/security/rsa/auth/
+│           ├── controller/AuthController.java  <-- POST /api/v1/auth/login
+│           ├── controller/JwksController.java  <-- GET /.well-known/jwks.json
+│           ├── controller/CryptoController.java<-- POST /api/v1/crypto/decrypt
+│           └── service/JwtTokenService.java    <-- Creates RS256 signed JWTs
+│
+├── resource-service/ (Port 8082)            <-- Downstream Protected API
+│   └── src/main/
+│       ├── resources/
+│       │   ├── application.yml              <-- Port 8082
+│       │   └── keys/
+│       │       └── public_key.pem           <-- PUBLIC KEY ONLY! (No private key)
+│       └── java/com/security/rsa/resource/
+│           ├── config/ResourceSecurityConfig.java   <-- Spring Security 6.4 Resource Server
+│           ├── controller/SecureDataController.java <-- Protected GET /api/v1/data/secure-info
+│           └── client/SecureCryptoClient.java       <-- Encrypts data using Public Key
+│
+└── scripts/
+    ├── generate-keys.sh                     <-- OpenSSL commands to generate new keys
+    ├── run-services.sh                      <-- Builds and runs both apps
+    └── demo-flow.sh                         <-- Automated test script using curl
+```
 
+---
+
+## 🚀 3-Minute Quickstart
+
+### 1. Build Everything
 ```bash
-# Generate 2048-bit RSA Private Key in PKCS#8 format
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private_key.pem
-
-# Extract RSA Public Key in X.509 SubjectPublicKeyInfo format
-openssl pkey -in private_key.pem -pubout -out public_key.pem
-
-# Inspect ASN.1 DER breakdown
-openssl asn1parse -in private_key.pem
-openssl asn1parse -in public_key.pem
-```
-
-Or execute the provided automated script:
-```bash
-./scripts/generate-keys.sh
-```
-
----
-
-## 🚀 Running the Microservices
-
-### Prerequisites
-- JDK 17+
-- Apache Maven 3.8+
-
-### Build and Launch
-```bash
-# Compile and package all modules
 mvn clean package -DskipTests
+```
 
-# Run services
+### 2. Start Both Services
+```bash
 ./scripts/run-services.sh
 ```
+* `auth-service` starts on **http://localhost:8081**
+* `resource-service` starts on **http://localhost:8082**
 
-Or start each service independently in separate terminals:
-```bash
-# Terminal 1: Auth Service (Port 8081)
-java -jar auth-service/target/auth-service-1.0.0-SNAPSHOT.jar
-
-# Terminal 2: Resource Service (Port 8082)
-java -jar resource-service/target/resource-service-1.0.0-SNAPSHOT.jar
-```
-
----
-
-## 🧪 Testing the Cryptographic Lifecycle
-
-Execute the automated test script:
+### 3. Run the Automated Demo
+In a second terminal:
 ```bash
 ./scripts/demo-flow.sh
 ```
 
-### Manual cURL Walkthrough:
+---
 
-#### 1. Fetch the JSON Web Key Set (JWKS) from `auth-service`
+## 🧪 Manual Walkthrough (Step-by-Step with `curl`)
+
+### Step 1: Look at the Public Key on `auth-service`
+Open your browser or run:
 ```bash
-curl -s http://localhost:8081/.well-known/jwks.json
+curl http://localhost:8081/.well-known/jwks.json
 ```
-*Notice: Modulus `n` and Exponent `e` are served publicly; the private key `d` is NEVER exposed.*
+**Output (RFC 7517 JSON Web Key Set):**
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "alg": "RS256",
+      "kid": "rsa-auth-key-1",
+      "n": "5xxZqXwVWHTj9RUqhZ18...",
+      "e": "AQAB"
+    }
+  ]
+}
+```
+* `n` is the RSA Modulus.
+* `e` is the Public Exponent (`AQAB` in Base64 = `65537`).
+* Notice that the private key parameters (`d`, `p`, `q`) are **never exposed**.
 
-#### 2. Authenticate and Obtain RS256-Signed JWT
+---
+
+### Step 2: Log in to `auth-service` and Get an RS256 Token
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8081/api/v1/auth/login \
+curl -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "alice", "password": "password123"}' \
-  | jq -r .access_token)
+  -d '{"username": "alice", "password": "password123"}'
 ```
-
-#### 3. Attempt Unauthenticated Access to `resource-service`
-```bash
-curl -i http://localhost:8082/api/v1/data/secure-info
-# Returns HTTP 401 Unauthorized
+**Output:**
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1hdXRoLWtleS0xIiw...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "algorithm": "RS256",
+  "key_id": "rsa-auth-key-1",
+  "roles": ["ROLE_USER"]
+}
 ```
-
-#### 4. Access Protected Endpoint with RS256 Bearer Token
+* `auth-service` signed this token using its private key (`private_key.pem`).
+* Save this token into an environment variable:
 ```bash
-curl -s http://localhost:8082/api/v1/data/secure-info \
-  -H "Authorization: Bearer $TOKEN" | jq .
-```
-*Notice: `resource-service` verified the token signature using ONLY its local `public_key.pem` without making any network call back to `auth-service`.*
-
-#### 5. Transmit Encrypted Payload Downstream to Upstream
-```bash
-curl -s -X POST http://localhost:8082/api/v1/client/demo-roundtrip \
-  -H "Content-Type: application/json" \
-  -d '{"plaintext": "Highly confidential business secret"}' | jq .
+TOKEN="<paste_access_token_here>"
 ```
 
 ---
 
-## 🛡️ Spring Security 6.4 Key Patterns
+### Step 3: Try Accessing `resource-service` Without a Token
+```bash
+curl -i http://localhost:8082/api/v1/data/secure-info
+```
+**Output:**
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="unauthorized"
+```
+Spring Security 6.4 immediately blocks unauthenticated requests.
 
-### 1. Spring Boot 3.4 `@ConfigurationProperties` Binding
-```java
-@ConfigurationProperties(prefix = "rsa")
-public class RsaKeyProperties {
-    private String privateKeyLocation;
-    private String publicKeyLocation;
-    private String keyId = "rsa-auth-key-1";
-    private String issuer = "http://localhost:8081";
-    // Getters and Setters
+---
+
+### Step 4: Access `resource-service` With Your Token
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/data/secure-info
+```
+**Output:**
+```json
+{
+  "message": "Access granted to confidential resource-service domain! JWT verified statelessly using RSA Public Key.",
+  "authenticatedSubject": "alice",
+  "issuer": "http://localhost:8081",
+  "authorities": ["ROLE_USER"],
+  "verificationMethod": "RSA RS256 Verification (Zero remote network roundtrip)"
 }
 ```
+**How this works:**
+`resource-service` checked the signature using **only its local `public_key.pem`**. It did **NOT** make any network calls to `auth-service`. This means:
+1. Verification takes less than `0.2 milliseconds`.
+2. Even if `auth-service` is temporarily down or under heavy load, `resource-service` can continue validating users!
 
-### 2. Stateless Offline JWT Verification (`resource-service`)
+---
+
+### Step 5: Encrypt a Secret Payload Downstream → Upstream
+Suppose `resource-service` needs to transmit credit card data or customer PII to `auth-service`:
+```bash
+curl -X POST http://localhost:8082/api/v1/client/demo-roundtrip \
+  -H "Content-Type: application/json" \
+  -d '{"plaintext": "Confidential Card: 4111-2222-3333-4444"}'
+```
+**Output:**
+```json
+{
+  "plaintext": "Confidential Card: 4111-2222-3333-4444",
+  "ciphertext": "a9Z81kq...[Base64 encrypted with Public Key]...",
+  "authServiceDecryptionResult": {
+    "decryptedContent": "Confidential Card: 4111-2222-3333-4444",
+    "status": "SUCCESS",
+    "decryptedBy": "auth-service (JCA Private Key Decryptor)",
+    "decryptionAlgorithm": "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
+  }
+}
+```
+* `resource-service` encrypted the card number with `public_key.pem`.
+* Anyone sniffing internal network traffic only sees gibberish.
+* Only `auth-service` (possessing `private_key.pem`) could decrypt it!
+
+---
+
+## 🔑 Generating New RSA Keys with OpenSSL
+
+If you want to create your own fresh keys, run:
+```bash
+./scripts/generate-keys.sh
+```
+
+Behind the scenes, it runs two standard OpenSSL commands:
+```bash
+# 1. Generate 2048-bit Private Key in PKCS#8 format (for Java KeyFactory)
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private_key.pem
+
+# 2. Extract Public Key in X.509 format
+openssl pkey -in private_key.pem -pubout -out public_key.pem
+```
+
+> **Why PKCS#8?**
+> Java's standard `PKCS8EncodedKeySpec` expects `-----BEGIN PRIVATE KEY-----` (PKCS#8).
+> Older tools generated `-----BEGIN RSA PRIVATE KEY-----` (PKCS#1), which requires extra parsing in Java. PKCS#8 is the modern, universal standard.
+
+---
+
+## 🛡️ Key Code Snippets Explained
+
+### 1. How Java 17 Loads a PEM Public Key (`PemKeyUtils.java`)
+```java
+// 1. Strip the header, footer, and spaces
+String cleanPem = pemContent
+    .replace("-----BEGIN PUBLIC KEY-----", "")
+    .replace("-----END PUBLIC KEY-----", "")
+    .replaceAll("\\s+", "");
+
+// 2. Base64 decode into raw DER bytes
+byte[] keyBytes = Base64.getDecoder().decode(cleanPem);
+
+// 3. Hand bytes to Java KeyFactory to build the RSAPublicKey object
+X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+RSAPublicKey publicKey = (RSAPublicKey) keyFactory.generatePublic(spec);
+```
+
+### 2. How `resource-service` Verifies Tokens with Spring Security 6.4
 ```java
 @Bean
 public JwtDecoder jwtDecoder(RSAPublicKey publicKey) {
-    NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(publicKey).build();
-    decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-        new JwtTimestampValidator(Duration.ofSeconds(30)),
-        new JwtClaimValidator<String>("iss", iss -> "http://localhost:8081".equals(iss))
-    ));
-    return decoder;
+    // NimbusJwtDecoder mathematically validates the token using the public key
+    return NimbusJwtDecoder.withPublicKey(publicKey).build();
 }
 ```
 
-### 3. JCA RSA-OAEP Encryption & Decryption
+### 3. How `auth-service` Decrypts Sensitive Data with RSA-OAEP
 ```java
+// OAEP with SHA-256 protects against padding oracle attacks
 Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-cipher.init(Cipher.ENCRYPT_MODE, publicKey, oaepParameterSpec);
-byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParameterSpec);
+byte[] plainBytes = cipher.doFinal(Base64.getDecoder().decode(base64Ciphertext));
+String plainText = new String(plainBytes, StandardCharsets.UTF_8);
 ```
+
+---
+
+## ❓ Frequently Asked Questions (FAQ)
+
+### Q: Why not use HMAC (HS256)?
+**A:** In HS256, verification requires the exact same secret used to create tokens. If you have 20 microservices, all 20 must know that secret. If even 1 low-priority service is compromised, the attacker can create fake `ROLE_ADMIN` tokens for the whole system. With RS256, only `auth-service` can create tokens.
+
+### Q: Does `resource-service` call `auth-service` for every request?
+**A:** **No!** That is the greatest strength of asymmetric JWTs. The public key contains the mathematical formula to check if the signature was stamped by the private key. No network calls are made.
+
+### Q: What is JWKS (`.well-known/jwks.json`)?
+**A:** It is a standardized JSON format (RFC 7517) for sharing public keys. It allows downstream services to automatically download new public keys whenever keys are rotated, without needing to restart services or update config files.
+
+---
+
+## 💻 Tech Stack Summary
+- **Language**: Java 17 (LTS)
+- **Framework**: Spring Boot 3.4.0
+- **Security**: Spring Security 6.4 (`spring-boot-starter-oauth2-resource-server`)
+- **JWT & Cryptography**: Nimbus JOSE + JWT (`com.nimbusds:nimbus-jose-jwt`) & Java Cryptography Architecture (JCA)
+- **Build Tool**: Apache Maven (multi-module)
